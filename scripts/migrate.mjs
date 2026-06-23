@@ -3,10 +3,34 @@
 //
 //   DATABASE_URL=... node scripts/migrate.mjs
 //
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { neon } from "@neondatabase/serverless";
+
+const rootDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Load .env.local into process.env (only keys not already set) so the script
+// works the same as the Next.js runtime without extra flags or dependencies.
+function loadEnvLocal() {
+  const file = join(rootDir, ".env.local");
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)\s*$/);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+loadEnvLocal();
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -14,7 +38,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations");
+const migrationsDir = join(rootDir, "db", "migrations");
 const files = readdirSync(migrationsDir)
   .filter((f) => f.endsWith(".sql"))
   .sort();
@@ -22,10 +46,15 @@ const files = readdirSync(migrationsDir)
 const sql = neon(databaseUrl);
 
 for (const file of files) {
-  const statements = readFileSync(join(migrationsDir, file), "utf8");
+  const raw = readFileSync(join(migrationsDir, file), "utf8");
   console.log(`Applying ${file}...`);
-  // Neon's HTTP driver runs one statement per call, so split on ";".
-  for (const statement of statements.split(";")) {
+  // Strip `--` line comments first (they may contain semicolons), then split
+  // into statements since Neon's HTTP driver runs one statement per call.
+  const stripped = raw
+    .split("\n")
+    .map((line) => line.replace(/--.*$/, ""))
+    .join("\n");
+  for (const statement of stripped.split(";")) {
     const trimmed = statement.trim();
     if (trimmed) await sql.query(trimmed);
   }
