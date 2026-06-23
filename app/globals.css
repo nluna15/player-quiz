@@ -1,26 +1,70 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ── Sticker design system ──────────────────────────────────────────────
+   Warm, collectible "Panini album" look: bold black outlines, hard offset
+   shadows, a touch of tilt. Quicksand for display, Nunito for body. */
+@theme {
+  --font-sans: var(--font-nunito);
+  --font-display: var(--font-quicksand);
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-page: #e6e4dd; /* area around the playing column */
+  --color-base: #f8edd8; /* dotted card background */
+  --color-dot: #e7d9bd;
+  --color-surface: #fffdf7; /* inner panels */
+  --color-ink: #1b1813; /* outlines + primary text */
+  --color-muted: #8a7f6a;
+  --color-tag: #f1e7cf;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-correct: #1fb84f;
+  --color-correct-soft: #d7f5e0;
+  --color-correct-ink: #159a3f;
+  --color-wrong: #fb5436;
+  --color-wrong-soft: #ffe2da;
+  --color-hint: #ffd23f;
+  --color-active: #3f74ff; /* "current" is a reserved Tailwind color name */
+  --color-locked: #d9cdb4;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Dotted cream backdrop used on the main quiz card. */
+.dot-bg {
+  background-color: var(--color-base);
+  background-image: radial-gradient(var(--color-dot) 1.4px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.85);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes slidein {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-pop {
+  animation: pop 0.28s ease;
+}
+
+.animate-slidein {
+  animation: slidein 0.25s ease;
 }
