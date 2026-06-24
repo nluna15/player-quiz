@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Country, Player } from "@/lib/quiz";
-import { continentOf, factOf, getPuzzleNumber } from "@/lib/quiz";
+import { continentOf, factOf, getPuzzleNumber, getTodayDateString } from "@/lib/quiz";
 import { trackQuizEvent } from "@/lib/analytics";
 import CountryTypeahead from "./CountryTypeahead";
 
@@ -245,16 +245,104 @@ function StatTile({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** One day in the "you vs. everyone" comparison chart. */
+type DailyAvg = {
+  date: string; // YYYY-MM-DD
+  puzzleNumber: number;
+  avgScore: number | null; // community average; null until someone finishes that day
+  plays: number;
+  userScore: number | null; // this device's score that day, from local history
+};
+
+/** Format a YYYY-MM-DD date as "Month Day, Year" (e.g. "June 23, 2026"). */
+function formatLongDate(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Short axis label for a date: "Today" for today, otherwise the weekday. */
+function dayLabel(date: string): string {
+  if (date === getTodayDateString()) return "Today";
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Horizontal bars of the community average score over the last few daily
+ * puzzles, with the player's own score drawn as a vertical hash on the same
+ * scale — so they can see where they land against everyone else.
+ */
+function DailyAvgChart({ days }: { days: DailyAvg[] }) {
+  // One shared scale for bars and hashes, so the hash position is comparable.
+  const scaleMax = Math.max(
+    1,
+    ...days.map((d) => Math.max(d.avgScore ?? 0, d.userScore ?? 0))
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      {days.map((d) => {
+        const avgPct = ((d.avgScore ?? 0) / scaleMax) * 100;
+        const hasUser = d.userScore != null;
+        const userPct = hasUser ? (d.userScore! / scaleMax) * 100 : 0;
+        return (
+          <div key={d.date} className="flex items-center gap-2">
+            <span className="w-10 shrink-0 text-right font-extrabold text-[10px] uppercase tracking-[0.5px] text-muted">
+              {dayLabel(d.date)}
+            </span>
+            <div className="relative h-[22px] flex-1 rounded-[7px] border-2 border-ink bg-surface">
+              {/* Community average fill. */}
+              <div
+                className="h-full rounded-[5px] bg-hint"
+                style={{ width: `${Math.min(100, Math.max(2, avgPct))}%` }}
+              />
+              {/* The player's own score, as a vertical hash on the same scale. */}
+              {hasUser && (
+                <div
+                  className="absolute top-[-4px] bottom-[-4px] w-[3px] -translate-x-1/2 rounded-full bg-correct"
+                  style={{ left: `${Math.min(100, userPct)}%` }}
+                  aria-label={`Your score: ${d.userScore}`}
+                  title={`Your score: ${d.userScore}`}
+                />
+              )}
+            </div>
+            <span className="w-7 shrink-0 text-right font-extrabold text-[11px] text-ink tabular-nums">
+              {d.avgScore == null ? "—" : d.avgScore}
+            </span>
+          </div>
+        );
+      })}
+      <div className="mt-1 flex items-center justify-center gap-3 font-bold text-[10px] text-muted">
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-3 rounded-[2px] border border-ink bg-hint" />
+          Avg score
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-3 w-[3px] rounded-full bg-correct" />
+          You
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Modal with lifetime score statistics, with today's result highlighted. */
 function StatsModal({
   stats,
   streak,
   todayCorrect,
+  dailyAvgs,
   onClose,
 }: {
   stats: StatsSummary;
   streak: number;
   todayCorrect: number | null;
+  dailyAvgs: DailyAvg[] | null;
   onClose: () => void;
 }) {
   const maxBar = Math.max(1, ...stats.dist);
@@ -327,6 +415,15 @@ function StatsModal({
                   );
                 })}
             </div>
+
+            {dailyAvgs && dailyAvgs.length > 0 && (
+              <>
+                <div className="mt-5 mb-2.5 font-extrabold text-[11px] uppercase tracking-[1.5px] text-muted">
+                  Last 5 days · avg score
+                </div>
+                <DailyAvgChart days={dailyAvgs} />
+              </>
+            )}
           </>
         )}
       </div>
@@ -353,6 +450,8 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
   const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
   // Snapshot of saved stats, read fresh from storage each time the modal opens.
   const [stats, setStats] = useState<StatsSummary | null>(null);
+  // Community daily averages + this device's scores, loaded when the modal opens.
+  const [dailyAvgs, setDailyAvgs] = useState<DailyAvg[] | null>(null);
 
   const countryByCode = useMemo(() => {
     const map = new Map<string, Country>();
@@ -463,22 +562,42 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
 
   function openStats() {
     setStats(summarizeStats());
+    setDailyAvgs(null);
+    void loadDailyAverages();
+  }
+
+  /** Fetch the community averages and merge in this device's own daily scores. */
+  async function loadDailyAverages() {
+    try {
+      const res = await fetch("/api/stats/daily-averages");
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        days: { date: string; puzzleNumber: number; avgScore: number | null; plays: number }[];
+      };
+      const { byDate } = readStatsStore();
+      setDailyAvgs(
+        data.days.map((d) => ({
+          ...d,
+          userScore: byDate[d.date]?.score ?? null,
+        }))
+      );
+    } catch {
+      // Best-effort: the chart simply stays hidden if this fails.
+    }
   }
   const answered = currentEntry?.guessedCode != null;
 
   function buildShareText(): string {
     const puzzleNo = getPuzzleNumber(dateStr);
     const squares = entries.map(entrySquare).join("");
-    const host = typeof window !== "undefined" ? window.location.host : "";
     return [
-      `Daily Player ⚽ #${puzzleNo}`,
-      `${correctCount} out of ${n} correct`,
+      `Where you from? Soccer Game ⚽ #${puzzleNo}`,
+      "",
       `${score}/${maxScore} pts`,
       squares,
-      host,
-    ]
-      .filter(Boolean)
-      .join("\n");
+      "",
+      "https://where-you-from.com",
+    ].join("\n");
   }
 
   async function handleShare() {
@@ -532,11 +651,13 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
           <Logo size="lg" />
 
           <div className="mt-7 text-center font-display text-[22px] font-bold leading-tight text-ink">
-            {n} players.
+            48 nations.
             <br />
-            {n} countries.
+            1,248 players.
             <br />
-            One shot a day.
+            {n} players a day.
+            <br />
+            One daily chance at glory.
           </div>
 
           {streak > 0 && (
@@ -577,7 +698,7 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
           </button>
 
           {isDaily ? (
-            <div className="mt-3.5 text-center font-bold text-xs text-muted">{dateStr}</div>
+            <div className="mt-3.5 text-center font-bold text-xs text-muted">{formatLongDate(dateStr)}</div>
           ) : (
             <button
               type="button"
@@ -611,7 +732,7 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
             key={i}
             className={`grid aspect-square flex-1 place-items-center rounded-xl border-[2.5px] border-ink font-display text-base font-bold ${cls}`}
           >
-            {done ? <span className="text-lg leading-none">{guessedFlag}</span> : i + 1}
+            {done ? <span className="text-4xl leading-none">{guessedFlag}</span> : i + 1}
           </div>
         );
       })}
@@ -775,7 +896,11 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
             stats={stats}
             streak={streak}
             todayCorrect={isDaily ? correctCount : null}
-            onClose={() => setStats(null)}
+            dailyAvgs={dailyAvgs}
+            onClose={() => {
+              setStats(null);
+              setDailyAvgs(null);
+            }}
           />
         )}
       </main>

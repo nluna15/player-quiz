@@ -141,6 +141,98 @@ export async function appendEvent(event: AnalyticsEventInput): Promise<void> {
 // ── Reads ──────────────────────────────────────────────────────────────
 const MAX_ROWS = 1000;
 
+/** Community average score for a daily puzzle, across every player who finished it. */
+export type DailyAverage = { puzzleNumber: number; avgScore: number; plays: number };
+
+/**
+ * Average completed-quiz score per daily puzzle, for the given puzzle numbers.
+ * Returns a map keyed by puzzle number; days with no plays are simply absent.
+ */
+export async function getDailyAverageScores(
+  puzzleNumbers: number[]
+): Promise<Map<number, DailyAverage>> {
+  const result = new Map<number, DailyAverage>();
+  if (puzzleNumbers.length === 0) return result;
+
+  const sql = getSql();
+  const placeholders = puzzleNumbers.map((_, i) => `$${i + 1}`).join(", ");
+  const rows = (await sql.query(
+    `SELECT puzzle_number,
+            AVG(score)::float AS avg_score,
+            COUNT(*)::int AS plays
+       FROM analytics_events
+       WHERE event_name = 'quiz_completed'
+         AND is_daily_quiz = TRUE
+         AND score IS NOT NULL
+         AND puzzle_number IN (${placeholders})
+       GROUP BY puzzle_number`,
+    puzzleNumbers
+  )) as Record<string, unknown>[];
+
+  for (const r of rows) {
+    const puzzleNumber = Number(r.puzzle_number);
+    result.set(puzzleNumber, {
+      puzzleNumber,
+      avgScore: Number(r.avg_score),
+      plays: Number(r.plays),
+    });
+  }
+  return result;
+}
+
+/** One UTC calendar day of bucketed engagement metrics, for the dashboard charts. */
+export type DailyTimeSeriesRow = {
+  day: string; // YYYY-MM-DD (UTC)
+  uniqueUsers: number;
+  started: number;
+  completed: number;
+  completionRate: number | null; // completed / started, null when nobody started
+  shareResult: number;
+  shareX: number;
+  shareWhatsapp: number;
+};
+
+/**
+ * Per-day engagement series for the filtered window, oldest → newest. Days with
+ * no matching events are simply absent (the charts treat gaps as zero).
+ */
+export async function getDailyTimeSeries(
+  filters: AnalyticsFilters
+): Promise<DailyTimeSeriesRow[]> {
+  const sql = getSql();
+  const { clause, params } = buildWhere(filters);
+
+  const rows = (await sql.query(
+    `SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+            COUNT(DISTINCT user_id)::int AS unique_users,
+            COUNT(*) FILTER (WHERE event_name = 'quiz_started')::int AS started,
+            COUNT(*) FILTER (WHERE event_name = 'quiz_completed')::int AS completed,
+            COUNT(*) FILTER (WHERE event_name = 'share_result')::int AS share_result,
+            COUNT(*) FILTER (WHERE event_name = 'share_x')::int AS share_x,
+            COUNT(*) FILTER (WHERE event_name = 'share_whatsapp')::int AS share_whatsapp
+       FROM analytics_events
+       ${clause}
+       GROUP BY day
+       ORDER BY day`,
+    params
+  )) as Record<string, unknown>[];
+
+  return rows.map((r) => {
+    const started = Number(r.started);
+    const completed = Number(r.completed);
+    return {
+      day: String(r.day),
+      uniqueUsers: Number(r.unique_users),
+      started,
+      completed,
+      completionRate: started > 0 ? completed / started : null,
+      shareResult: Number(r.share_result),
+      shareX: Number(r.share_x),
+      shareWhatsapp: Number(r.share_whatsapp),
+    };
+  });
+}
+
 /** Raw events matching the filters, newest first. */
 export async function getEvents(filters: AnalyticsFilters): Promise<AnalyticsEventRow[]> {
   const sql = getSql();

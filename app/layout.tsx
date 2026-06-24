@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Quicksand, Nunito } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 // Display face — geometric, rounded, used for the logo, names, scores and buttons.
@@ -16,9 +17,33 @@ const nunito = Nunito({
   weight: ["400", "600", "700", "800", "900"],
 });
 
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "http://localhost:3000";
+
+const title = "Daily Player Quiz";
+const description =
+  "Guess each soccer player's World Cup country. New players every day.";
+
 export const metadata: Metadata = {
-  title: "Daily Player Quiz",
-  description: "Guess each soccer player's World Cup country. New players every day.",
+  metadataBase: new URL(siteUrl),
+  title,
+  description,
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName: title,
+    title,
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
+  icons: {
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>",
+  },
 };
 
 export default function RootLayout({
@@ -35,6 +60,7 @@ export default function RootLayout({
         <div className="mx-auto flex w-full max-w-[460px] flex-1 flex-col px-4 py-6 sm:py-9">
           {children}
         </div>
+        <Analytics />
       </body>
     </html>
   );
