@@ -28,10 +28,10 @@ const FULL_POINTS = 100;
 
 // Available hints, in display order. Single source of truth for label/cost.
 const HINTS: { key: HintKey; emoji: string; label: string; cost: number }[] = [
-  { key: "continent", emoji: "🌍", label: "Continent", cost: 10 },
+  { key: "continent", emoji: "🌍", label: "Continent", cost: 5 },
   { key: "fact", emoji: "🧩", label: "Country clue", cost: 25 },
   { key: "club", emoji: "🏟️", label: "Club", cost: 10 },
-  { key: "name", emoji: "🕵️", label: "Player name", cost: 10 },
+  { key: "name", emoji: "🕵️", label: "Player name", cost: 15 },
 ];
 
 const HINT_COST: Record<HintKey, number> = Object.fromEntries(
