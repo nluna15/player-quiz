@@ -21,9 +21,9 @@ const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
   ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
   : "http://localhost:3000";
 
-const title = "Daily Player Quiz";
+const title = "Where You From?";
 const description =
-  "Guess each soccer player's World Cup country. New players every day.";
+  "Guess each soccer player's country. New players every day.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

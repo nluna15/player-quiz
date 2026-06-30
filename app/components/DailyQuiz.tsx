@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Country, Player } from "@/lib/quiz";
 import { continentOf, factOf, getPuzzleNumber, getTodayDateString } from "@/lib/quiz";
+import { buildShareGrid, buildShareText } from "@/lib/share";
 import { trackQuizEvent } from "@/lib/analytics";
 import CountryTypeahead from "./CountryTypeahead";
 
@@ -44,13 +45,6 @@ function hintsCost(hints: HintKey[]): number {
 
 function entryPoints(e: Entry): number {
   return e.correct ? Math.max(0, FULL_POINTS - hintsCost(e.hints)) : 0;
-}
-
-// Share-grid square per player:
-//   🟩 correct, no hint · 🟨 correct with hint · 🟥 missed
-function entrySquare(e: Entry): string {
-  if (!e.correct) return "🟥";
-  return e.hints.length === 0 ? "🟩" : "🟨";
 }
 
 function freshEntries(count: number): Entry[] {
@@ -587,22 +581,20 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
   }
   const answered = currentEntry?.guessedCode != null;
 
-  function buildShareText(): string {
-    const puzzleNo = getPuzzleNumber(dateStr);
-    const squares = entries.map(entrySquare).join("");
-    return [
-      `Where you from? Soccer Game ⚽ #${puzzleNo}`,
-      "",
-      `${score}/${maxScore} pts`,
-      squares,
-      "",
-      "https://where-you-from.com",
-    ].join("\n");
+  function shareText(platform: "default" | "x" = "default") {
+    return buildShareText({
+      puzzleNumber: getPuzzleNumber(dateStr),
+      correctCount,
+      totalPlayers: n,
+      score,
+      entries,
+      platform,
+    });
   }
 
   async function handleShare() {
     trackQuizEvent({ name: "share_result" }, analyticsCtx);
-    const text = buildShareText();
+    const text = shareText();
     // Prefer the OS-native share sheet when available.
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -623,13 +615,13 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
 
   function handleShareToX() {
     trackQuizEvent({ name: "share_x" }, analyticsCtx);
-    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(buildShareText())}`;
+    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(shareText("x"))}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function handleShareToWhatsApp() {
     trackQuizEvent({ name: "share_whatsapp" }, analyticsCtx);
-    const url = `https://wa.me/?text=${encodeURIComponent(buildShareText())}`;
+    const url = `https://wa.me/?text=${encodeURIComponent(shareText())}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -872,8 +864,8 @@ export default function DailyQuiz({ players, countries, dateStr, seed }: Props) 
             <div>
               Daily Player ⚽ — {correctCount}/{n}
             </div>
-            <div className="my-1.5 text-2xl tracking-[5px]">
-              {entries.map(entrySquare).join("")}
+            <div className="my-1.5 text-base leading-relaxed">
+              {buildShareGrid(entries)}
             </div>
             <div className="text-[#a89a7d]">
               Come back tomorrow for {n} new players
