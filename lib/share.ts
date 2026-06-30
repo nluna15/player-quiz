@@ -1,7 +1,6 @@
 export type ShareEntry = { correct: boolean };
 
 const SHARE_URL = "where-you-from.com";
-const X_CHAR_LIMIT = 280;
 
 export function shareEntrySymbol(entry: ShareEntry): string {
   return entry.correct ? "⚽" : "🧤";
@@ -19,14 +18,7 @@ export function buildShareText(opts: {
   entries: ShareEntry[];
   platform?: "default" | "x";
 }): string {
-  const {
-    puzzleNumber,
-    correctCount,
-    totalPlayers,
-    score,
-    entries,
-    platform = "default",
-  } = opts;
+  const { puzzleNumber, correctCount, totalPlayers, score, entries } = opts;
 
   const grid = buildShareGrid(entries);
 
@@ -36,21 +28,6 @@ export function buildShareText(opts: {
     `Can you guess each player's country and go ${totalPlayers}/${totalPlayers}?`,
     SHARE_URL,
   ];
-
-  const xTightLines = [
-    `I got ${correctCount}/${totalPlayers} · ${score} pts — Where You From? #${puzzleNumber} 🌎`,
-    grid,
-    `Guess each player's country. Go ${totalPlayers}/${totalPlayers}?`,
-    SHARE_URL,
-  ];
-
-  if (platform === "x") {
-    const defaultText = defaultLines.join("\n");
-    if (defaultText.length > X_CHAR_LIMIT) {
-      return xTightLines.join("\n");
-    }
-    return defaultText;
-  }
 
   return defaultLines.join("\n");
 }
